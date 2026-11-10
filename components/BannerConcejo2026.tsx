@@ -1,0 +1,124 @@
+'use client';
+import { useEffect, useState } from 'react';
+import { supabase } from '@/lib/supabase';
+import { ShieldAlert, School, ArrowRight } from 'lucide-react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+
+export default function BannerConcejo2026() {
+  const [rol, setRol] = useState<string | null>(null);
+  const [mostrarBanner, setMostrarBanner] = useState<boolean>(false);
+  const [loading, setLoading] = useState(true);
+  const pathname = usePathname();
+
+  useEffect(() => {
+    // Solo permitir en /admin o /dashboard
+    if (!pathname.startsWith('/admin') && !pathname.startsWith('/dashboard')) {
+      setLoading(false);
+      return;
+    }
+
+    const cargarDatos = async () => {
+      try {
+        // 1. Verificar el interruptor global en Supabase
+        const { data: config } = await supabase
+          .from('configuracion_sistema')
+          .select('activo')
+          .eq('clave', 'mostrar_banner_concejo')
+          .single();
+
+        if (config && config.activo === false) {
+          setLoading(false);
+          return;
+        }
+
+        setMostrarBanner(true);
+
+        // 2. Obtener el correo desde localStorage (igual que tu app)
+        let correoLogueado = '';
+        const sessionData = localStorage.getItem('user_session');
+        if (sessionData) {
+          try {
+            const parsed = JSON.parse(sessionData);
+            if (parsed?.email) correoLogueado = parsed.email;
+          } catch (e) {}
+        }
+
+        if (!correoLogueado) {
+          setLoading(false);
+          return;
+        }
+
+        // 3. Buscar el rol del usuario en directorio_operativo usando su correo
+        const { data: perfil } = await supabase
+          .from('directorio_operativo')
+          .select('rol')
+          .ilike('email', correoLogueado)
+          .maybeSingle();
+
+        if (perfil) {
+          setRol(perfil.rol);
+        }
+
+      } catch (error) {
+        console.error("Error cargando banner:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    cargarDatos();
+  }, [pathname]);
+
+  if ((!pathname.startsWith('/admin') && !pathname.startsWith('/dashboard')) || loading || !rol || !mostrarBanner) {
+    return null;
+  }
+
+  // Vista para Administradores (/admin)
+  if (rol === 'superusuario' || rol === 'admin') {
+    return (
+      <div className="w-full bg-gradient-to-r from-red-700 via-amber-600 to-red-800 text-white px-4 py-3 flex flex-col md:flex-row items-center justify-between gap-3 shadow-md z-50 relative">
+        <div className="flex items-center gap-2 text-center md:text-left">
+          <div className="bg-white/20 p-1.5 rounded-lg shrink-0 hidden sm:block">
+            <ShieldAlert size={18} className="text-white" />
+          </div>
+          <p className="text-[11px] md:text-sm font-black tracking-wide uppercase leading-tight">
+            Monitor Centralizado: <br className="block md:hidden"/>
+            <span className="text-amber-200">Segunda Consulta Popular Nacional 2026</span>
+          </p>
+        </div>
+        <Link 
+          href="/admin/concejo2026" 
+          className="flex items-center justify-center gap-2 bg-white text-red-700 px-6 py-2 rounded-full text-xs font-black hover:bg-gray-100 transition-all shadow-sm w-full md:w-auto shrink-0"
+        >
+          SUPERVISAR ESTADO <ArrowRight size={14} />
+        </Link>
+      </div>
+    );
+  }
+
+  // Vista para Usuarios Operativos (/dashboard)
+  if (rol === 'usuario') {
+    return (
+      <div className="w-full bg-gradient-to-r from-[#00529b] via-blue-600 to-[#003d73] text-white px-4 py-3 flex flex-col md:flex-row items-center justify-between gap-3 shadow-md z-50 relative">
+        <div className="flex items-center gap-2 text-center md:text-left">
+          <div className="bg-white/20 p-1.5 rounded-lg shrink-0 hidden sm:block">
+            <School size={18} className="text-emerald-300" />
+          </div>
+          <p className="text-[11px] md:text-sm font-bold tracking-wide uppercase leading-tight">
+            Módulo Operativo Activo: <br className="block md:hidden"/>
+            <span className="text-emerald-200 font-black">Segunda Consulta Popular Nacional 2026</span>
+          </p>
+        </div>
+        <Link 
+          href="/dashboard/concejo2026" 
+          className="flex items-center justify-center gap-2 bg-emerald-500 text-white px-6 py-2 rounded-full text-xs font-black hover:bg-emerald-600 transition-all shadow-sm w-full md:w-auto shrink-0"
+        >
+          INICIAR EVALUACIÓN <ArrowRight size={14} />
+        </Link>
+      </div>
+    );
+  }
+
+  return null;
+}
