@@ -33,29 +33,27 @@ export default function LoginPage() {
       const correoLimpio = email.trim().toLowerCase();
       const codigoLimpio = codigo.trim();
 
-      // Buscamos directamente el usuario y su clave en la tabla operativa
-      // Buscamos el usuario por correo y código SITUR de forma segura
+      // Buscamos el usuario por correo y código SITUR con límite de 10 segundos para evitar bloqueos
       const { data: users, error: dbError } = await supabase
         .from('directorio_operativo')
         .select('id, rol, email, codigo_situr')
         .ilike('email', correoLimpio)
-        .eq('codigo_situr', codigoLimpio);
+        .eq('codigo_situr', codigoLimpio)
+        .abortSignal(AbortSignal.timeout(10000));
 
       if (dbError) {
         setErrorMsg(`Error de base de datos: ${dbError.message}`);
-        setLoading(false);
         return;
       }
 
       if (!users || users.length === 0) {
-        setErrorMsg("Credenciales inválidas. Verifica tu correo y código SITUR.");
-        setLoading(false);
+        setErrorMsg('Credenciales inválidas. Verifica tu correo y código SITUR.');
         return;
       }
 
       const userInDB = users[0];
 
-      // Si todo coincide, guardamos los datos de sesión localmente para que el panel los reconozca
+      // Guardamos los datos de sesión localmente para que el panel los reconozca
       localStorage.setItem('user_session', JSON.stringify(userInDB));
 
       // Redirección según el rol exacto
@@ -64,9 +62,14 @@ export default function LoginPage() {
       } else {
         router.push('/dashboard');
       }
-      
     } catch (err: any) {
-      setErrorMsg(`Error crítico: ${err.message || JSON.stringify(err)}`);
+      const isTimeout = err?.name === 'TimeoutError' || err?.name === 'AbortError';
+      setErrorMsg(
+        isTimeout
+          ? 'Tiempo de espera agotado (10s). Verifica que el túnel de Localtonet esté activo en el servidor.'
+          : `Error crítico: ${err.message || JSON.stringify(err)}`
+      );
+    } finally {
       setLoading(false);
     }
   };
@@ -83,7 +86,7 @@ export default function LoginPage() {
           <div className="w-px h-12 bg-gray-200"></div>
           <img src="/logo2.png" alt="Logo CUPAZ" className="h-16 w-auto object-contain drop-shadow-md" />
         </div>
-        
+
         <div className="text-center mb-8">
           <h1 className="text-2xl font-black text-gray-800 tracking-tight flex items-center justify-center gap-2">
             <ShieldCheck className="text-[#00529b]" size={26} /> SISTEMA OPERATIVO
@@ -93,44 +96,48 @@ export default function LoginPage() {
         {errorMsg && (
           <div className="mb-6 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-xl text-sm font-bold flex flex-col gap-1">
             <div className="flex items-center gap-2">
-              <AlertCircle size={18} className="shrink-0" /> 
+              <AlertCircle size={18} className="shrink-0" />
               <p className="font-black">Error detectado:</p>
             </div>
             <p className="text-xs break-words">{errorMsg}</p>
           </div>
         )}
-        
+
         <form onSubmit={handleLogin} className="space-y-5">
           <div>
-            <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wider pl-1">Usuario / Correo</label>
+            <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wider pl-1">
+              Usuario / Correo
+            </label>
             <div className="relative">
               <Mail size={18} className="absolute left-4 top-4 text-gray-400" />
-              <input 
-                type="email" 
-                required 
-                placeholder="ejemplo@cupaz.com" 
-                className="w-full py-3.5 pl-11 pr-4 bg-gray-50 border border-gray-200 rounded-xl font-medium text-gray-800 focus:ring-2 focus:ring-[#00529b] outline-none transition-all" 
-                value={email} 
-                onChange={(e) => setEmail(e.target.value)} 
+              <input
+                type="email"
+                required
+                placeholder="ejemplo@cupaz.com"
+                className="w-full py-3.5 pl-11 pr-4 bg-gray-50 border border-gray-200 rounded-xl font-medium text-gray-800 focus:ring-2 focus:ring-[#00529b] outline-none transition-all"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wider pl-1">Código SITUR (Clave)</label>
+            <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wider pl-1">
+              Código SITUR (Clave)
+            </label>
             <div className="relative">
               <KeyRound size={18} className="absolute left-4 top-4 text-gray-400" />
-              <input 
-                type={showPassword ? "text" : "password"} 
-                required 
-                placeholder="Ingresa tu código" 
-                className="w-full py-3.5 pl-11 pr-12 bg-gray-50 border border-gray-200 rounded-xl font-medium text-gray-800 focus:ring-2 focus:ring-[#00529b] outline-none transition-all" 
-                value={codigo} 
-                onChange={(e) => setCodigo(e.target.value)} 
+              <input
+                type={showPassword ? 'text' : 'password'}
+                required
+                placeholder="Ingresa tu código"
+                className="w-full py-3.5 pl-11 pr-12 bg-gray-50 border border-gray-200 rounded-xl font-medium text-gray-800 focus:ring-2 focus:ring-[#00529b] outline-none transition-all"
+                value={codigo}
+                onChange={(e) => setCodigo(e.target.value)}
               />
-              <button 
-                type="button" 
-                onClick={() => setShowPassword(!showPassword)} 
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
                 className="absolute right-4 top-4 text-gray-400 hover:text-[#00529b]"
               >
                 {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
@@ -144,18 +151,28 @@ export default function LoginPage() {
             </Link>
           </div>
 
-          <button 
-            type="submit" 
-            disabled={loading} 
+          <button
+            type="submit"
+            disabled={loading}
             className="w-full mt-2 bg-gradient-to-r from-[#00529b] to-[#003d73] text-white py-3.5 rounded-xl font-black uppercase hover:shadow-lg transition-all disabled:opacity-70 flex items-center justify-center gap-2"
           >
-            {loading ? <><Loader2 size={20} className="animate-spin" /> Sincronizando...</> : 'Ingresar al Sistema'}
+            {loading ? (
+              <>
+                <Loader2 size={20} className="animate-spin" /> Sincronizando...
+              </>
+            ) : (
+              'Ingresar al Sistema'
+            )}
           </button>
         </form>
 
         <div className="mt-8 text-center border-t border-gray-100 pt-6">
-          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Centro de Comando y Control</p>
-          <p className="text-[10px] font-medium text-gray-400 mt-1">Ministerio del Poder Popular para Relaciones Interiores, Justicia y Paz</p>
+          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+            Centro de Comando y Control
+          </p>
+          <p className="text-[10px] font-medium text-gray-400 mt-1">
+            Ministerio del Poder Popular para Relaciones Interiores, Justicia y Paz
+          </p>
         </div>
       </div>
     </div>
