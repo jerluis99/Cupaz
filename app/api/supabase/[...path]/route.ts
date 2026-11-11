@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const TARGET_URL = 'https://f5otcnoeef.localto.net/';
+const TARGET_URL = ' https://lvypkfof6e.localto.net';
 
 async function handleProxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname.replace('/api/supabase', '');
