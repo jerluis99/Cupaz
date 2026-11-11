@@ -1,37 +1,48 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-// Toma la URL desde las variables de entorno de Vercel o usa la actual por defecto (sin espacios en blanco)
-const TARGET_URL = (process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://lvypkfof6e.localto.net').trim();
+const TARGET_URL = (process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://lvypkfof6e.localto.net').trim().replace(/\/$/, '');
 
 async function handleProxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname.replace('/api/supabase', '');
   const search = request.nextUrl.search;
   const destination = `${TARGET_URL}${pathname}${search}`;
 
-  const headers = new Headers(request.headers);
-  // Cabeceras obligatorias para saltar el bloqueo/advertencia de Localtonet
+  // Solo copiamos las cabeceras necesarias para Supabase y Localtonet
+  // Evitamos reenviar 'origin', 'referer', 'connection' o 'content-length' del cliente
+  const headers = new Headers();
+  const allowedHeaders = ['apikey', 'authorization', 'content-type', 'accept', 'prefer', 'range', 'x-client-info'];
+  
+  allowedHeaders.forEach((key) => {
+    const val = request.headers.get(key);
+    if (val) headers.set(key, val);
+  });
+
+  // Cabeceras obligatorias para saltar la pantalla de advertencia de Localtonet
   headers.set('localtonet-skip-warning', 'true');
   headers.set('bypass-tunnel-reminder', 'true');
-  headers.delete('host');
 
   try {
-    const body = request.method !== 'GET' && request.method !== 'HEAD' 
-      ? await request.blob() 
+    const body = request.method !== 'GET' && request.method !== 'HEAD'
+      ? await request.text()
       : undefined;
 
     const response = await fetch(destination, {
       method: request.method,
-      headers: headers,
-      body: body,
+      headers,
+      body,
       cache: 'no-store',
+      // Corta en 8 segundos si el túnel de Localtonet no responde
+      signal: AbortSignal.timeout(8000),
     });
 
-    const data = await response.blob();
-    
-    // Limpiamos cabeceras de codificación para evitar errores al reenviar la respuesta
-    const responseHeaders = new Headers(response.headers);
-    responseHeaders.delete('content-encoding');
-    responseHeaders.delete('content-length');
+    const data = await response.arrayBuffer();
+
+    const responseHeaders = new Headers();
+    const copyResHeaders = ['content-type', 'content-range', 'preference-applied'];
+    copyResHeaders.forEach((key) => {
+      const val = response.headers.get(key);
+      if (val) responseHeaders.set(key, val);
+    });
 
     return new NextResponse(data, {
       status: response.status,
@@ -39,7 +50,15 @@ async function handleProxy(request: NextRequest) {
       headers: responseHeaders,
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    const isTimeout = error?.name === 'TimeoutError' || error?.name === 'AbortError';
+    return NextResponse.json(
+      {
+        message: isTimeout
+          ? `El túnel (${TARGET_URL}) no respondió en 8 segundos. Verifica que Localtonet esté activo en el servidor.`
+          : `Error conectando al túnel (${TARGET_URL}): ${error.message}`,
+      },
+      { status: 504 }
+    );
   }
 }
 
